@@ -53,9 +53,10 @@ class MAX31855(object):
         self._spi.set_mode(0)
         self._spi.set_bit_order(SPI.MSBFIRST)
 
-    def readInternalC(self):
+    def readInternalC(self, v=None):
         """Return internal temperature value in degrees celsius."""
-        v = self._read32()
+        if not v:
+            v = self._read32()
         # Ignore bottom 4 bits of thermocouple data.
         v >>= 4
         # Grab bottom 11 bits as internal temperature data.
@@ -67,9 +68,10 @@ class MAX31855(object):
         # Scale by 0.0625 degrees C per bit and return value.
         return internal * 0.0625
 
-    def readTempC(self):
+    def readTempC(self, v=None):
         """Return the thermocouple temperature value in degrees celsius."""
-        v = self._read32()
+        if not v:
+            v = self._read32()
         # Check for error reading value.
         if v & 0x7:
             return float('NaN')
@@ -85,10 +87,11 @@ class MAX31855(object):
         # Scale by 0.25 degrees C per bit and return value.
         return v * 0.25
 
-    def readState(self):
+    def readState(self, v=None):
         """Return dictionary containing fault codes and hardware problems
         """
-        v = self._read32()
+        if not v:
+            v = self._read32()
         return {
             'openCircuit': (v & (1 << 0)) > 0,
             'shortGND': (v & (1 << 1)) > 0,
@@ -96,12 +99,28 @@ class MAX31855(object):
             'fault': (v & (1 << 16)) > 0
         }
 
-    def readLinearizedTempC(self):
+    def readAll(self, v=None, include_linearized=True):
+        """Return the internal, external, state, and linearized values.
+        """
+        if not v:
+            v = self._read32()
+        ret = {'temp'     : self.readTempC(v),
+               'internal' : self.readInternalC(v),
+               'state'    : self.readState(v)
+              }
+        if include_linearized:
+            ret['linearized'] = self.readLinearizedTempC(v)
+        return ret
+               
+    def readLinearizedTempC(self, v=None):
         """Return the NIST-linearized thermocouple temperature value in degrees celsius.
         See https://learn.adafruit.com/calibrating-sensors/maxim-31855-linearization for more info.
         """
         # MAX31855 thermocouple voltage reading in mV
-        thermocoupleVoltage = (self.readTempC() - self.readInternalC()) * 0.041276
+        thermocoupleVoltage = (self.readTempC(v) - self.readInternalC(v)) * 0.041276
+        if math.isnan(thermocoupleVoltage):
+            # readTempC returned nan
+            return thermocoupleVoltage
         # MAX31855 cold junction voltage reading in mV
         coldJunctionTemperature = self.readInternalC()
         coldJunctionVoltage = (-0.176004136860E-01 +
